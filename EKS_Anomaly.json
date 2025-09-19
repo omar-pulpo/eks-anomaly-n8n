@@ -1,0 +1,462 @@
+{
+  "name": "EKS-Anomaly",
+  "nodes": [
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "custom",
+              "cronExpression": "*/5 * * * *"
+            }
+          ]
+        }
+      },
+      "name": "Cron Trigger",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        -1120,
+        144
+      ],
+      "id": "34fe4d81-32f1-4719-9a42-5efe4ebb6e09"
+    },
+    {
+      "parameters": {
+        "url": "=https://172.20.0.1:443/api/v1/namespaces/my-microservice/pods ",
+        "allowUnauthorizedCerts": true,
+        "options": {
+          "ignoreResponseCode": true,
+          "proxy": false
+        },
+        "headerParametersUi": {
+          "parameter": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.stdout }}"
+            }
+          ]
+        }
+      },
+      "name": "K8s Get Pods",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -672,
+        144
+      ],
+      "id": "0d937031-eda2-4c70-9590-e91ba5ee6cca",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Eres un agente experto en Kubernetes, DevOps y Ciberseguridad. \nTu tarea es analizar incidentes en un cluster EKS y dar diagnósticos técnicos con acciones específicas.\n\nAquí tienes la información del pod problemático:\n\n- Namespace: {{ $json.pod.namespace }}\n- Pod: {{ $json.pod.name }}\n- Estado actual: {{ $json.pod.status }}\n- Razón reportada por Kubernetes: \n- Últimos eventos del pod: \n{{ $json.eventsText }}\n- Logs recientes del contenedor:\n{{ $json.logsText }}\n\nInstrucciones:\n1. Analiza los eventos y los logs para determinar la causa raíz más probable del problema.\n2. No respondas con generalidades (ej. “revisar logs”). \n   Da una acción concreta y técnica, por ejemplo:\n   - Si ves `OOMKilled`, recomienda aumentar `resources.limits.memory` de X a Y.\n   - Si ves errores de conexión a DB, indica revisar secret/env correspondiente.\n   - Si ves error de imagen, indica actualizar la versión o verificar el registry.\n3. Da la respuesta en este formato:\n\n**Diagnóstico:** [explicación breve de la causa raíz]  \n**Recomendación:** [acción técnica específica y óptima]  \n**Nivel de Confianza:** [Alto / Medio / Bajo]  \n\nSi hay varias posibles causas, ordénalas por probabilidad.",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        896,
+        144
+      ],
+      "id": "dc262300-0254-40ed-9300-348be2fb676a",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        976,
+        368
+      ],
+      "id": "785c37bc-7c89-4606-a7ea-0aaebd4125f5",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "RpD2ICXBsc2dtsjx",
+          "name": "Google Gemini"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "executeOnce": false,
+        "command": "cat /var/run/secrets/kubernetes.io/serviceaccount/token"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -896,
+        144
+      ],
+      "id": "7563db75-c41a-4e90-9825-073d86146271",
+      "name": "Certification",
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "#devops",
+          "mode": "name"
+        },
+        "text": "=:rotating_light: ALERTA KUBERNETES :rotating_light:\n\nNamespace: `{{ $('Order Logs, Events').item.json.pod.namespace }}`\nPod: `{{ $('Order Logs, Events').item.json.pod.name }}`\n\n{{ $json.output }}",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        1248,
+        144
+      ],
+      "id": "fb4824b8-04c8-4dbc-8b3b-989f1fa9ec84",
+      "name": "Send a message",
+      "webhookId": "b806932d-f153-4ea0-a3e8-c7ff0642dce4",
+      "credentials": {
+        "slackApi": {
+          "id": "0nwMmtUNRqkqtE3I",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://172.20.0.1:443/api/v1/namespaces/{{ $json.filteredPods[0].namespace }}/pods/{{ $json.filteredPods[0].name }}/log?container={{ $json.filteredPods[0].restarts[0].containerName }}&previous=true",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $item(0).$node[\"Certification\"].json.stdout }}"
+            }
+          ]
+        },
+        "options": {
+          "allowUnauthorizedCerts": true,
+          "response": {
+            "response": {}
+          },
+          "proxy": "false"
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "05dfbda1-9782-4442-ae44-afc2fe70d8b9",
+      "name": "HTTP Get Logs",
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "url": "=https://172.20.0.1:443/api/v1/namespaces/{{ $json.filteredPods[0].namespace }}/events?fieldSelector=involvedObject.name={{ $json.filteredPods[0].name }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $item(0).$node[\"Certification\"].json.stdout }}"
+            }
+          ]
+        },
+        "options": {
+          "allowUnauthorizedCerts": true,
+          "response": {
+            "response": {}
+          },
+          "proxy": "false"
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        288
+      ],
+      "id": "9d093aa3-3f95-455d-871f-6658a57f7da7",
+      "name": "HTTP GET Events",
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n    const pods = item.json.items || [];\n\n    // Transformar primero los pods\n    const transformed = pods\n        .map(pod => {\n            const restarts = (pod.status.containerStatuses || []).map(c => ({\n                containerName: c.name,\n                restartCount: c.restartCount,\n                ready: c.ready,\n                state: c.state\n            }));\n\n            return {\n                name: pod.metadata.name,\n                namespace: pod.metadata.namespace,\n                node: pod.spec.nodeName,\n                status: pod.status.phase,\n                restarts,\n                creationTimestamp: pod.metadata.creationTimestamp,\n                labels: pod.metadata.labels,\n                annotations: pod.metadata.annotations,\n            };\n        })\n        // ❌ Filtrar pods cuyos contenedores no tengan reinicios\n        .filter(pod => pod.restarts.some(r => r.restartCount > 0));\n\n    // Agrupar por containerName\n    const byContainer = {};\n    transformed.forEach(pod => {\n        pod.restarts.forEach(c => {\n            const key = c.containerName;\n            const current = byContainer[key];\n\n            if (!current) {\n                // Primer pod para este container\n                byContainer[key] = pod;\n            } else {\n                // Comparar número de reinicios\n                const currentMax = Math.max(...current.restarts.map(r => r.restartCount));\n                const newMax = Math.max(...pod.restarts.map(r => r.restartCount));\n\n                if (newMax > currentMax) {\n                    byContainer[key] = pod;\n                }\n                // Si son iguales, se queda el primero (no se reemplaza)\n            }\n        });\n    });\n\n    // Output: un pod por containerName\n    const filteredPods = Object.values(byContainer);\n\n    return {\n        json: {\n            filteredPods\n        }\n    };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -448,
+        144
+      ],
+      "id": "d58e3c53-3fb6-4b63-a617-e7582b05c13f",
+      "name": "Get Pods with Restarts"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "e8a69694-bd59-44cd-a0c2-7fed098543e5",
+              "leftValue": "={{ $json.filteredPods }}",
+              "rightValue": "",
+              "operator": {
+                "type": "array",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -224,
+        144
+      ],
+      "id": "32cb2f9a-62e2-457f-a5b8-b07da8ba39e0",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Procesa todos los items que entran\nreturn items.map(item => {\n  const logs = item.json.data || \"\";\n\n  const criticalPatterns = [\n    \"Error\",\n    \"Exception\",\n    \"OOMKilled\",\n    \"CrashLoopBackOff\",\n    \"Segmentation fault\",\n    \"failed\",\n    \"panic\",\n    \"Warning\"\n  ];\n\n  const regex = new RegExp(criticalPatterns.join(\"|\"), \"i\");\n\n  const filtered = logs\n    .split(\"\\n\")\n    .filter(line => regex.test(line))\n    .slice(-50); // limitar coincidencias por pod\n\n  return {\n    json: {\n      errorLogs: filtered\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ],
+      "id": "7363581d-3064-4469-9e7e-465fd1f84fb4",
+      "name": "Filter Critical Patterns"
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n    const events = item.json.items; // array de eventos\n    const filteredEvents = events.map(event => {\n        return {\n            name: event.metadata.name,\n            namespace: event.metadata.namespace,\n            involvedObject: {\n                kind: event.involvedObject.kind,\n                name: event.involvedObject.name,\n                namespace: event.involvedObject.namespace,\n                uid: event.involvedObject.uid,\n            },\n            type: event.type, // Normal o Warning\n            reason: event.reason,\n            message: event.message,\n            count: event.count,\n            firstTimestamp: event.firstTimestamp,\n            lastTimestamp: event.lastTimestamp,\n            source: event.source ? event.source.component : undefined,\n        };\n    });\n\n    // Devolver los datos filtrados al siguiente nodo (Agente AI)\n    return {\n        json: {\n            filteredEvents\n        }\n    };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        288
+      ],
+      "id": "fe364e8a-288d-412c-ad07-38eb1e06200d",
+      "name": "Filter Events"
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        448,
+        128
+      ],
+      "id": "fb3c81b4-1f47-474e-b9d1-d5e3f56beaaa",
+      "name": "Merge Data",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Espera un array con la estructura [ { errorLogs }, { filteredPods }, { filteredEvents } ]\n// Ejemplo de tu JSON final mergeado.\n\nconst errorLogs = items.find(i => i.json.errorLogs)?.json.errorLogs || [];\nconst filteredPods = items.find(i => i.json.filteredPods)?.json.filteredPods || [];\nconst filteredEvents = items.find(i => i.json.filteredEvents)?.json.filteredEvents || [];\n\n// Mapear pods y asociar logs + eventos\nconst result = filteredPods.map(pod => {\n  const podName = pod.name;\n  const podNamespace = pod.namespace;\n\n  // Eventos relacionados a este pod\n  const podEvents = filteredEvents.filter(\n    ev => ev.involvedObject?.name === podName && ev.involvedObject?.namespace === podNamespace\n  );\n\n  // Logs relacionados a este pod (puedes mejorar si hay múltiples contenedores)\n  const podLogs = errorLogs;\n\n  // Preparar eventos como texto legible\n  const eventsText = podEvents.length > 0\n    ? podEvents.map(ev =>\n        `(${ev.type}) ${ev.reason} - ${ev.message} [${ev.firstTimestamp} -> ${ev.lastTimestamp}]`\n      ).join(\"\\n\")\n    : \"No events\";\n\n  // Preparar logs como texto legible\n  const logsText = podLogs.length > 0\n    ? podLogs.join(\"\\n\")\n    : \"No critical logs\";\n\n  return {\n    json: {\n      pod: {\n        name: pod.name,\n        namespace: pod.namespace,\n        node: pod.node,\n        status: pod.status,\n        restarts: pod.restarts,\n        creationTimestamp: pod.creationTimestamp,\n        labels: pod.labels\n      },\n      events: podEvents,\n      eventsText,\n      logs: podLogs,\n      logsText\n    }\n  };\n});\n\nreturn result;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        144
+      ],
+      "id": "8922e522-14b8-43af-9e25-008e7ac671dd",
+      "name": "Order Logs, Events"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Cron Trigger": {
+      "main": [
+        [
+          {
+            "node": "Certification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "K8s Get Pods": {
+      "main": [
+        [
+          {
+            "node": "Get Pods with Restarts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Certification": {
+      "main": [
+        [
+          {
+            "node": "K8s Get Pods",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Get Logs": {
+      "main": [
+        [
+          {
+            "node": "Filter Critical Patterns",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Pods with Restarts": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP GET Events": {
+      "main": [
+        [
+          {
+            "node": "Filter Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "HTTP Get Logs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge Data",
+            "type": "main",
+            "index": 1
+          },
+          {
+            "node": "HTTP GET Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Critical Patterns": {
+      "main": [
+        [
+          {
+            "node": "Merge Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Events": {
+      "main": [
+        [
+          {
+            "node": "Merge Data",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge Data": {
+      "main": [
+        [
+          {
+            "node": "Order Logs, Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Order Logs, Events": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "fe94f4e0-ac5b-470f-b2fc-88ff84752cd3",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "03a134c8be3d5da1b6d6421bdc1b61b3d69e3a0ff896fb0564209117f2f373df"
+  },
+  "id": "HlwzHmRxAhrnAwqu",
+  "tags": [
+    {
+      "name": "DevOps",
+      "id": "IvCWvP6TT7Vjg1TD",
+      "createdAt": "2025-09-19T20:48:00.358Z",
+      "updatedAt": "2025-09-19T20:48:00.358Z"
+    }
+  ]
+}
